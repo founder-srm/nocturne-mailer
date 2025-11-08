@@ -96,3 +96,33 @@ export const updateEmailStatus = async (
 		.bind(status, id)
 		.run();
 };
+
+/**
+ * Lists recent email jobs.
+ * @param db The D1 database instance.
+ * @param limit Max number of rows to return (default 20)
+ */
+export const listEmails = async (
+	db: D1Database,
+	limit = 20,
+): Promise<EmailJob[]> => {
+	const { results } = await db
+		.prepare("SELECT * FROM emails ORDER BY created_at DESC LIMIT ?")
+		.bind(limit)
+		.all<EmailJob>();
+	return results ?? [];
+};
+
+/**
+ * Fetch a single email job by id.
+ */
+export const getEmailById = async (
+	db: D1Database,
+	id: string,
+): Promise<EmailJob | null> => {
+	const { results } = await db
+		.prepare("SELECT * FROM emails WHERE id = ?")
+		.bind(id)
+		.all<EmailJob>();
+	return results && results.length > 0 ? results[0] : null;
+};
