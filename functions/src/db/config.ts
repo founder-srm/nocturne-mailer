@@ -1,7 +1,7 @@
-import type { D1Database, D1Result } from '@cloudflare/workers-types';
+import type { D1Database, D1Result } from "@cloudflare/workers-types";
 
 // Define the possible statuses for an email job
-export type EmailStatus = 'queued' | 'processing' | 'sent' | 'failed';
+export type EmailStatus = "queued" | "processing" | "sent" | "failed";
 
 // Define the structure of an email job in our database
 export interface EmailJob {
@@ -23,16 +23,16 @@ export interface EmailJob {
  */
 export const createEmailJobs = async (
 	db: D1Database,
-	jobs: { id: string; recipient: string; subject: string; body: string }[]
+	jobs: { id: string; recipient: string; subject: string; body: string }[],
 ): Promise<D1Result[]> => {
 	// Prepare a single statement to insert multiple rows
 	const stmt = db.prepare(
-		'INSERT INTO emails (id, recipient, subject, body) VALUES (?, ?, ?, ?)'
+		"INSERT INTO emails (id, recipient, subject, body) VALUES (?, ?, ?, ?)",
 	);
 
 	// Batch all the insert operations together
 	const operations = jobs.map(({ id, recipient, subject, body }) =>
-		stmt.bind(id, recipient, subject, body)
+		stmt.bind(id, recipient, subject, body),
 	);
 
 	return await db.batch(operations);
@@ -47,12 +47,12 @@ export const createEmailJobs = async (
  */
 export const getQueuedEmailsForProcessing = async (
 	db: D1Database,
-	batchSize = 10
+	batchSize = 10,
 ): Promise<EmailJob[]> => {
 	// 1. Select a batch of 'queued' emails
 	const { results } = await db
-		.prepare('SELECT id FROM emails WHERE status = ? LIMIT ?')
-		.bind('queued', batchSize)
+		.prepare("SELECT id FROM emails WHERE status = ? LIMIT ?")
+		.bind("queued", batchSize)
 		.all<{ id: string }>();
 
 	if (!results || results.length === 0) {
@@ -62,7 +62,7 @@ export const getQueuedEmailsForProcessing = async (
 	const idsToProcess = results.map((row) => row.id);
 
 	// Create a dynamic list of placeholders for the IN clause -> "(?, ?, ?)"
-	const placeholders = idsToProcess.map(() => '?').join(', ');
+	const placeholders = idsToProcess.map(() => "?").join(", ");
 
 	// 2. Atomically update their status to 'processing' and return the locked jobs
 	const updateQuery = `
@@ -87,11 +87,11 @@ export const getQueuedEmailsForProcessing = async (
 export const updateEmailStatus = async (
 	db: D1Database,
 	id: string,
-	status: 'sent' | 'failed'
+	status: "sent" | "failed",
 ): Promise<D1Result> => {
 	return await db
 		.prepare(
-			'UPDATE emails SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+			"UPDATE emails SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 		)
 		.bind(status, id)
 		.run();

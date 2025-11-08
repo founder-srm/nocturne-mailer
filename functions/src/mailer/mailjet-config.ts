@@ -1,5 +1,5 @@
-import mailjet from 'node-mailjet';
-import type { EmailJob } from '../db/config';
+import mailjet from "node-mailjet";
+import type { EmailJob } from "../db/config";
 
 /**
  * Sends an email using the Mailjet API.
@@ -11,16 +11,16 @@ import type { EmailJob } from '../db/config';
 export const sendEmailWithMailjet = async (
 	job: EmailJob,
 	apiKey: string,
-	apiSecret: string
+	apiSecret: string,
 ) => {
 	const mj = mailjet.apiConnect(apiKey, apiSecret);
 
-	const request = mj.post('send', { version: 'v3.1' }).request({
+	const request = mj.post("send", { version: "v3.1" }).request({
 		Messages: [
 			{
 				From: {
-					Email: 'contact@suvangs.tech', // IMPORTANT: Replace later with fc email
-					Name: 'Suvan GS',
+					Email: "contact@suvangs.tech", // IMPORTANT: Replace later with fc email
+					Name: "Suvan GS",
 				},
 				To: [
 					{

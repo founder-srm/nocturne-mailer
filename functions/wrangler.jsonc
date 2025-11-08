@@ -2,20 +2,16 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "nocturne-functions",
 	"compatibility_date": "2025-08-03",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/index.tsx",
-  "triggers": {
-    "crons": [
-      "* * * * *"
-    ]
-  },
+	"triggers": {
+		"crons": ["* * * * *"]
+	},
 	"d1_databases": [
 		{
 			"binding": "nocturne_db",
 			"database_name": "nocturne-db",
 			"database_id": "7510b0b9-5f55-48c7-8c82-6e91975c45de"
 		}
-	],
+	]
 }

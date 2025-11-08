@@ -1,3 +1,3 @@
 export type QueueEmailsResult =
-  | { message: string; jobIds: string[] }
-  | { error: string }
+	| { message: string; jobIds: string[] }
+	| { error: string };
