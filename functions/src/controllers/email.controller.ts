@@ -1,7 +1,7 @@
-import { createEmailJobs, updateEmailStatus, getQueuedEmailsForProcessing } from '@/db/config'
-import { sendEmailWithMailjet } from '@/mailer/mailjet-config'
-import type { QueueEmailsResult } from '@/types/emails'
-import type { Env } from '@/types/env'
+import { createEmailJobs, updateEmailStatus, getQueuedEmailsForProcessing } from '../db/config'
+import { sendEmailWithMailjet } from '../mailer/mailjet-config'
+import type { QueueEmailsResult } from '../types/emails'
+import type { Env } from '../types/env'
 import { ulid } from 'ulid'
 
 

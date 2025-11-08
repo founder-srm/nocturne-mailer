@@ -3,8 +3,8 @@ import { logger } from 'hono/logger'
 import { renderer } from './renderer'
 import routes from './routes'
 import type { ScheduledController, ExecutionContext } from '@cloudflare/workers-types'
-import type { Env } from '@/types/env'
-import { processQueuedEmails } from '@/controllers/email.controller'
+import type { Env } from './types/env'
+import { processQueuedEmails } from './controllers/email.controller'
 
 const app = new Hono<{ Bindings: Env }>()
 

@@ -8,10 +8,6 @@
     "lib": [
       "ESNext"
     ],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-    },
     "types": ["vite/client"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx"

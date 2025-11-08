@@ -1,5 +1,5 @@
 import mailjet from 'node-mailjet';
-import type { EmailJob } from '@/db/config';
+import type { EmailJob } from '../db/config';
 
 /**
  * Sends an email using the Mailjet API.

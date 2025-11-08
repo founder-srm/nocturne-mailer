@@ -2,8 +2,8 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import { createRoute, z } from '@hono/zod-openapi'
 import { swaggerUI } from '@hono/swagger-ui'
 import { homeGreeting } from '../controllers/home.controller'
-import { queueEmails, processMailjetWebhook } from '@/controllers/email.controller'
-import type { Env } from '@/types/env'
+import { queueEmails, processMailjetWebhook } from '../controllers/email.controller'
+import type { Env } from '../types/env'
 import type { Context } from 'hono'
 
 // Initialize OpenAPI-enabled Hono instance for grouped routes
