@@ -104,6 +104,16 @@ const queueEmailsRoute = createRoute({
 
 routes.openapi(queueEmailsRoute, async (c) => {
 	try {
+		// Guard: Ensure D1 binding is available (likely missing when running plain Vite dev)
+		if (!c.env || !('nocturne_db' in c.env) || !c.env.nocturne_db) {
+			return c.json(
+				{
+					error:
+						"D1 binding 'nocturne_db' is not available. Run with Cloudflare Worker dev (e.g., `npm run dev:cf`) or configure Vite to use the Worker runtime."
+				},
+				500
+			)
+		}
 		const body = await c.req.json<z.infer<typeof QueueEmailsRequest>>()
 		const result = await queueEmails(c.env, body)
 		if ('error' in result) {
