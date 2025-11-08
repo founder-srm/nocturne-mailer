@@ -3,7 +3,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"dev:cf": "wrangler dev",
+		"dev:cf": "wrangler dev --test-scheduled",
 		"build": "vite build",
 		"preview": "$npm_execpath run build && vite preview",
 		"deploy": "$npm_execpath run build && wrangler deploy",
