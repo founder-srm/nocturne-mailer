@@ -1,5 +1,5 @@
 {
-  "name": "functions",
+  "name": "nocturne-functions",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,13 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
-    "hono": "^4.10.4"
+    "@cloudflare/workers-types": "^4.20251107.0",
+    "@hono/swagger-ui": "^0.5.2",
+    "@hono/zod-openapi": "^1.1.4",
+    "hono": "^4.10.4",
+    "node-mailjet": "^6.0.11",
+    "ulid": "^3.0.1",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.2.3",
