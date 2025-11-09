@@ -9,7 +9,8 @@ A serverless email queue and observability system built on Cloudflare Workers. F
 
 ## Features
 
-- **Email Queue Management**: Queue emails for asynchronous processing with ULID-based job IDs
+- **Email Queue Management**: Queue individual emails or bulk emails with templates for asynchronous processing with ULID-based job IDs
+- **Bulk Email Support**: Send single template to thousands of recipients with one API call (max 1000 per request)
 - **Dead-Letter Queue**: Automatic retry logic with configurable attempts and dead-job handling
 - **Scheduled Processing**: Cron-triggered email batch processing (configurable intervals)
 - **Mailjet Integration**: Send emails via Mailjet API with webhook status updates
@@ -53,6 +54,20 @@ src/
 **Database**: D1 SQLite with `emails` table tracking job status, retries, and timestamps.
 
 **Scheduled Cron**: Processes queued emails every 5 minutes (configurable in `wrangler.jsonc`).
+
+---
+
+## TODO
+
+- [ ] Implement email tracking (opens, clicks)
+- [ ] Add support for attachments
+- [ ] Improve error handling and logging
+- [ ] Create a dashboard for monitoring email performance
+- [ ] Implement methods for Emails with custom content per recipient
+- [ ] Add support for cc / bcc fields
+
+---
+
 
 ## Prerequisites
 
@@ -249,7 +264,7 @@ wrangler secret list
 ### Public Endpoints
 
 #### `POST /api/send`
-Queue emails for processing.
+Queue individual emails for processing.
 
 **Request Body**:
 ```json
@@ -265,8 +280,35 @@ Queue emails for processing.
 **Response**:
 ```json
 {
-  "message": "1 email(s) queued",
+  "message": "Emails have been queued successfully!",
   "jobIds": ["01JCXYZ..."]
+}
+```
+
+#### `POST /api/send/bulk`
+Queue bulk emails with a single template to multiple recipients (max 1000 per request).
+
+**Request Body**:
+```json
+{
+  "recipients": [
+    "user1@example.com",
+    "user2@example.com",
+    "user3@example.com"
+  ],
+  "template": {
+    "subject": "Monthly Newsletter",
+    "body": "Hello! Here is your monthly newsletter..."
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "message": "3 email(s) queued successfully!",
+  "jobIds": ["01JCXYZ...", "01JCABC...", "01JCDEF..."],
+  "recipientCount": 3
 }
 ```
 
