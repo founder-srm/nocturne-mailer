@@ -16,6 +16,8 @@ import {
   getBounceStatistics,
   getClickStatistics
 } from '../controllers/admin.controller'
+import { FixedWindowRateLimiter } from '../utils/ratelimit.js'
+import { TTLCache } from '../utils/ttlCache.js'
 import type { Env } from '../types/env'
 
 // Initialize OpenAPI-enabled Hono instance for grouped routes
@@ -219,25 +221,169 @@ routes.post('/api/admin/emails/:id/requeue', async (c) => {
 
 export default routes
 
-// --- Admin Observability & Mailjet routes (non-OpenAPI) ---
+// ---------------- Admin Observability (non-OpenAPI) ----------------
+// Define once at top-level scope
 const isAuthorized = (c: Context) => {
   const adminKey = c.env.ADMIN_API_KEY
   if (!adminKey) return true
   return c.req.header('x-admin-key') === adminKey
 }
 
+// Simple per-key rate limiter: 60 req/min per admin key or IP
+const adminLimiter = new FixedWindowRateLimiter(60, 60_000)
+routes.use('/api/admin/*', async (c, next) => {
+  const key = c.req.header('x-admin-key') || c.req.header('cf-connecting-ip') || 'anon'
+  if (!adminLimiter.allow(key)) return c.json({ error: 'Too Many Requests' }, 429)
+  await next()
+})
+
+// Short-lived cache (30s) for expensive GETs
+const adminCache = new TTLCache<unknown>()
+const getCacheKey = (c: Context) => {
+  const url = new URL(c.req.url)
+  url.hash = ''
+  return `${c.req.method}:${url.pathname}${url.search}`
+}
+
 routes.get('/admin', (c) => c.html(adminHtml))
 
 routes.get('/api/admin/logs', async (c) => {
   if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
   try {
     const data = await fetchWorkerLogs(c.env)
+    adminCache.set(key, data, 30_000)
     return c.json(data)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return c.json({ error: 'Failed to fetch logs', details: msg }, 500)
   }
 })
+
+routes.get('/api/admin/mailjet/statcounters', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getStatCounters(c.env, {
+      SourceId: c.req.query('sourceId'),
+      CounterSource: c.req.query('counterSource') || 'ApiKey',
+      CounterTiming: c.req.query('counterTiming') || 'Message',
+      CounterResolution: c.req.query('counterResolution') || 'Lifetime',
+      FromTS: c.req.query('fromTs'),
+      ToTS: c.req.query('toTs')
+    })
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet statcounters error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/link-click', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const campaignId = c.req.query('campaignId')
+  if (!campaignId) return c.json({ error: 'campaignId required' }, 400)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getLinkClick(c.env, campaignId)
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet link-click error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/recipient-esp', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const campaignId = c.req.query('campaignId')
+  if (!campaignId) return c.json({ error: 'campaignId required' }, 400)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getRecipientEsp(c.env, campaignId)
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet recipient-esp error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/contactstatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getContactStatistics(c.env, {
+      contact: c.req.query('contact'),
+      campaignId: c.req.query('campaignId'),
+      fromTs: c.req.query('fromTs'),
+      toTs: c.req.query('toTs')
+    })
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet contactstatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/geostatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getGeoStatistics(c.env, c.req.query('campaignId'))
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet geostatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/bouncestatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getBounceStatistics(c.env, c.req.query('campaignId'))
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet bouncestatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/clickstatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const key = getCacheKey(c)
+  const cached = adminCache.get(key)
+  if (cached) return c.json(cached)
+  try {
+    const data = await getClickStatistics(c.env, c.req.query('campaignId'))
+    adminCache.set(key, data, 30_000)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet clickstatistics error', details: msg }, 500)
+  }
+})
+
+// duplicate section removed (isAuthorized defined earlier)
 
 routes.get('/api/admin/mailjet/statcounters', async (c) => {
   if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)

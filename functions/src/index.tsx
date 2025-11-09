@@ -2,6 +2,7 @@ import type { ExecutionContext, ScheduledEvent } from "@cloudflare/workers-types
 import { Hono } from "hono";
 import { cache } from "hono/cache";
 import { logger } from "hono/logger";
+import { prettyJSON } from 'hono/pretty-json'
 import { processQueuedEmails } from "./controllers/email.controller";
 import { renderer } from "./renderer";
 import routes from "./routes";
@@ -17,6 +18,8 @@ app.use(renderer);
 
 // Mount API/routes
 app.route("/", routes);
+
+app.use(prettyJSON())
 
 // Cache GET responses for 1 hour (tune as needed). Avoid non-GET endpoints.
 app.get(
