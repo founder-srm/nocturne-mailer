@@ -4,8 +4,12 @@
 	"compatibility_date": "2025-08-03",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/index.tsx",
-	"triggers": {
-		"crons": ["* * * * *"]
+  "triggers": {
+    "crons": [
+      "30-59/5 1 * * *",
+      "*/5 2-16 * * *",
+      "0-30/5 17 * * *"
+    ]
 	},
 	"d1_databases": [
 		{
