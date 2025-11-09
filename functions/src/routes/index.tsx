@@ -40,13 +40,14 @@ routes.get('/docs', swaggerUI({ url: '/openapi.json' }))
 
 // ---------------- Shared Schemas ----------------
 const ErrorResponse = z.object({ error: z.string() })
-const EmailStatus = z.enum(['queued', 'processing', 'sent', 'failed'])
+const EmailStatus = z.enum(['queued', 'processing', 'sent', 'failed', 'dead'])
 const EmailJobSchema = z.object({
   id: z.string(),
   recipient: z.string().email(),
   subject: z.string(),
   body: z.string(),
   status: EmailStatus,
+  retry_count: z.number().int().nonnegative().openapi({ example: 1 }),
   created_at: z.string(),
   updated_at: z.string()
 })

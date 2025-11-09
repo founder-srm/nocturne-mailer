@@ -1,7 +1,7 @@
 import type { D1Database, D1Result } from "@cloudflare/workers-types";
 
 // Define the possible statuses for an email job
-export type EmailStatus = "queued" | "processing" | "sent" | "failed";
+export type EmailStatus = "queued" | "processing" | "sent" | "failed" | "dead";
 
 // Define the structure of an email job in our database
 export interface EmailJob {
@@ -10,6 +10,7 @@ export interface EmailJob {
 	subject: string;
 	body: string;
 	status: EmailStatus;
+	retry_count: number; // number of attempts
 	created_at: string;
 	updated_at: string;
 }
@@ -87,13 +88,41 @@ export const getQueuedEmailsForProcessing = async (
 export const updateEmailStatus = async (
 	db: D1Database,
 	id: string,
-	status: "sent" | "failed",
+	status: "sent" | "failed" | "dead",
 ): Promise<D1Result> => {
 	return await db
 		.prepare(
 			"UPDATE emails SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 		)
 		.bind(status, id)
+		.run();
+};
+
+/**
+ * Handle a failed job using retry policy: increment retry_count and re-queue,
+ * or mark as 'dead' after exceeding the max retries.
+ */
+export const handleFailedJob = async (
+	db: D1Database,
+	job: EmailJob,
+	maxRetries: number,
+) => {
+	const current = Number(job.retry_count || 0);
+	if (current >= maxRetries) {
+		// Move to dead letter state
+		return db
+			.prepare(
+				"UPDATE emails SET status = 'dead', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+			)
+			.bind(job.id)
+			.run();
+	}
+	// Increment retry count and re-queue
+	return db
+		.prepare(
+			"UPDATE emails SET status = 'queued', retry_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		)
+		.bind(current + 1, job.id)
 		.run();
 };
 

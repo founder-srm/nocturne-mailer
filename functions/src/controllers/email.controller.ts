@@ -3,6 +3,7 @@ import {
 	createEmailJobs,
 	getQueuedEmailsForProcessing,
 	updateEmailStatus,
+	handleFailedJob,
 } from "../db/config";
 import { sendEmailWithMailjet } from "../mailer/mailjet-config";
 import type { QueueEmailsResult } from "../types/emails";
@@ -69,7 +70,8 @@ export const processQueuedEmails = async (env: Env) => {
 				);
 				await updateEmailStatus(env.nocturne_db, job.id, "sent");
 			} catch (e) {
-				await updateEmailStatus(env.nocturne_db, job.id, "failed");
+				// Retry with DLQ policy: 3 attempts max
+				await handleFailedJob(env.nocturne_db, job, 3);
 			}
 		}),
 	);
