@@ -17,5 +17,18 @@
 			"database_name": "nocturne-db",
 			"database_id": "7510b0b9-5f55-48c7-8c82-6e91975c45de"
 		}
-	]
+	],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  }
 }
