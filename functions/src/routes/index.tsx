@@ -3,7 +3,7 @@ import { swaggerUI } from '@hono/swagger-ui'
 import type { Context } from 'hono'
 import { homeGreeting } from '../controllers/home.controller'
 import homeHtml from '../views/home.html?raw'
-import { queueEmails, processMailjetWebhook } from '../controllers/email.controller'
+import { queueEmails, queueBulkEmails, processMailjetWebhook } from '../controllers/email.controller'
 import { listEmails, getEmailById, requeueEmailJob } from '../db/config'
 import adminHtml from '../views/admin.html?raw'
 import {
@@ -108,6 +108,59 @@ routes.openapi(queueEmailsRoute, async (c) => {
     return c.json({ message: result.message, jobIds: result.jobIds }, 200)
   } catch (e) {
     return c.json({ error: 'Failed to process request' }, 500)
+  }
+})
+
+// ---------------- /api/send/bulk ----------------
+const BulkEmailTemplate = z.object({
+  subject: z.string().min(1).openapi({ example: 'Monthly Newsletter' }),
+  body: z.string().min(1).openapi({ example: 'Hello! Here is your monthly newsletter...' })
+})
+const BulkEmailRequest = z.object({
+  recipients: z.array(z.string().email()).min(1).max(1000).openapi({ 
+    example: ['user1@example.com', 'user2@example.com', 'user3@example.com'],
+    description: 'Array of email addresses (max 1000 per request)'
+  }),
+  template: BulkEmailTemplate
+})
+const BulkEmailResponse = z.object({
+  message: z.string(),
+  jobIds: z.array(z.string()),
+  recipientCount: z.number().int().positive()
+})
+
+const queueBulkEmailsRoute = createRoute({
+  method: 'post',
+  path: '/api/send/bulk',
+  tags: ['Email'],
+  request: {
+    body: { content: { 'application/json': { schema: BulkEmailRequest } } }
+  },
+  responses: {
+    200: {
+      description: 'Bulk email jobs queued with single template',
+      content: { 'application/json': { schema: BulkEmailResponse } }
+    },
+    400: { description: 'Invalid input', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
+  }
+})
+
+routes.openapi(queueBulkEmailsRoute, async (c) => {
+  try {
+    if (!c.env?.nocturne_db) {
+      return c.json({ error: "D1 binding 'nocturne_db' is not available. Use wrangler dev." }, 500)
+    }
+    const body = await c.req.json<z.infer<typeof BulkEmailRequest>>()
+    const result = await queueBulkEmails(c.env, body.recipients, body.template)
+    if ('error' in result) return c.json({ error: result.error }, 400)
+    return c.json({ 
+      message: result.message, 
+      jobIds: result.jobIds,
+      recipientCount: body.recipients.length 
+    }, 200)
+  } catch (e) {
+    return c.json({ error: 'Failed to process bulk request' }, 500)
   }
 })
 

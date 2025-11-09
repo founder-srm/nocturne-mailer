@@ -25,6 +25,28 @@ export const queueEmails = async (
 	};
 };
 
+// Controller: queue bulk emails with single template
+export const queueBulkEmails = async (
+	env: Env,
+	recipients: string[],
+	template: { subject: string; body: string },
+): Promise<QueueEmailsResult> => {
+	if (!recipients.length) {
+		return { error: "No recipients provided" };
+	}
+	const jobs = recipients.map((recipient) => ({
+		id: ulid(),
+		recipient,
+		subject: template.subject,
+		body: template.body,
+	}));
+	await createEmailJobs(env.nocturne_db, jobs);
+	return {
+		message: `${jobs.length} email(s) queued successfully!`,
+		jobIds: jobs.map((j) => j.id),
+	};
+};
+
 // Controller: process webhook events from Mailjet
 export const processMailjetWebhook = async (
 	env: Env,
