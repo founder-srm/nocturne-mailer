@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
 
 export type Env = {
 	// D1 binding name as configured in wrangler.jsonc
@@ -11,4 +11,7 @@ export type Env = {
 	// Optional overrides
 	CF_WORKER_SCRIPT?: string; // defaults to wrangler name if not provided
 	ADMIN_API_KEY?: string; // optional simple header-based admin protection
+	// Optional KV bindings for rate limiting and caching
+	RATE_LIMIT_KV?: KVNamespace;
+	ADMIN_CACHE_KV?: KVNamespace;
 };

@@ -2,14 +2,16 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "nocturne-functions",
 	"compatibility_date": "2025-08-03",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"main": "./src/index.tsx",
-  "triggers": {
-    "crons": [
-      "30-59/5 1 * * *",
-      "*/5 2-16 * * *",
-      "0-30/5 17 * * *"
-    ]
+	"triggers": {
+		"crons": [
+			"30-59/5 1 * * *",
+			"*/5 2-16 * * *",
+			"0-30/5 17 * * *"
+		]
 	},
 	"d1_databases": [
 		{
@@ -18,17 +20,23 @@
 			"database_id": "7510b0b9-5f55-48c7-8c82-6e91975c45de"
 		}
 	],
-  "observability": {
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 1,
-      "invocation_logs": true,
-      "persist": true
-    },
-    "traces": {
-      "enabled": false,
-      "head_sampling_rate": 1,
-      "persist": true
-    }
-  }
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"head_sampling_rate": 1,
+			"invocation_logs": true,
+			"persist": true
+		},
+		"traces": {
+			"enabled": false,
+			"head_sampling_rate": 1,
+			"persist": true
+		}
+	},
+	"kv_namespaces": [
+		{
+			"binding": "RATE_LIMIT_CACHE",
+			"id": "41291e4fbce34e3fb790e7338f0f7bb5"
+		}
+	]
 }
