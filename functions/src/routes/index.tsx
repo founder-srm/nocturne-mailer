@@ -2,8 +2,20 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
 import { swaggerUI } from '@hono/swagger-ui'
 import type { Context } from 'hono'
 import { homeGreeting } from '../controllers/home.controller'
+import homeHtml from '../views/home.html?raw'
 import { queueEmails, processMailjetWebhook } from '../controllers/email.controller'
-import { listEmails, getEmailById } from '../db/config'
+import { listEmails, getEmailById, requeueEmailJob } from '../db/config'
+import adminHtml from '../views/admin.html?raw'
+import {
+  fetchWorkerLogs,
+  getStatCounters,
+  getLinkClick,
+  getRecipientEsp,
+  getContactStatistics,
+  getGeoStatistics,
+  getBounceStatistics,
+  getClickStatistics
+} from '../controllers/admin.controller'
 import type { Env } from '../types/env'
 
 // Initialize OpenAPI-enabled Hono instance for grouped routes
@@ -28,7 +40,7 @@ const homeRoute = createRoute({
 
 routes.openapi(homeRoute, (c: Context) => {
   const greeting = homeGreeting()
-  return c.html(`<h1>${greeting}</h1>`)
+  return c.html(homeHtml.replace('%%GREETING%%', greeting))
 })
 
 // Serve OpenAPI JSON + Swagger UI
@@ -128,11 +140,18 @@ const listEmailsRoute = createRoute({
   method: 'get',
   path: '/api/emails',
   tags: ['Email'],
+  request: {
+    query: z.object({
+      limit: z.string().optional(),
+      status: EmailStatus.optional()
+    })
+  },
   responses: {
     200: {
-      description: 'List recent email jobs',
+      description: 'List recent (optionally filtered) email jobs',
       content: { 'application/json': { schema: z.array(EmailJobSchema) } }
     },
+    400: { description: 'Invalid query', content: { 'application/json': { schema: ErrorResponse } } },
     500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
   }
 })
@@ -141,8 +160,12 @@ routes.openapi(listEmailsRoute, async (c) => {
   try {
     if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
     const limitParam = c.req.query('limit')
+    const statusParam = c.req.query('status') as z.infer<typeof EmailStatus> | undefined
+    if (statusParam && !EmailStatus.options.includes(statusParam)) {
+      return c.json({ error: 'Invalid status parameter' }, 400)
+    }
     const limit = Math.min(Math.max(Number(limitParam) || 20, 1), 100)
-    const emails = await listEmails(c.env.nocturne_db, limit)
+    const emails = await listEmails(c.env.nocturne_db, limit, statusParam)
     return c.json(emails, 200)
   } catch (e) {
     return c.json({ error: 'Failed to list emails' }, 500)
@@ -174,4 +197,137 @@ routes.openapi(getEmailRoute, async (c) => {
   }
 })
 
+// --- Admin specific (retry) NOT exposed via OpenAPI to reduce surface ---
+routes.post('/api/admin/emails/:id/requeue', async (c) => {
+  try {
+    if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
+    // simple header check consistent with /admin endpoints in index.tsx
+    const adminKey = c.env.ADMIN_API_KEY
+    if (adminKey) {
+      const provided = c.req.header('x-admin-key')
+      if (!provided || provided !== adminKey) return c.json({ error: 'Unauthorized' }, 401)
+    }
+    const id = c.req.param('id')
+    const reset = c.req.query('reset') !== 'false'
+    const updated = await requeueEmailJob(c.env.nocturne_db, id, reset)
+    if (!updated) return c.json({ error: 'Not found or not eligible' }, 404)
+    return c.json(updated, 200)
+  } catch (e) {
+    return c.json({ error: 'Failed to requeue email' }, 500)
+  }
+})
+
 export default routes
+
+// --- Admin Observability & Mailjet routes (non-OpenAPI) ---
+const isAuthorized = (c: Context) => {
+  const adminKey = c.env.ADMIN_API_KEY
+  if (!adminKey) return true
+  return c.req.header('x-admin-key') === adminKey
+}
+
+routes.get('/admin', (c) => c.html(adminHtml))
+
+routes.get('/api/admin/logs', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await fetchWorkerLogs(c.env)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Failed to fetch logs', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/statcounters', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await getStatCounters(c.env, {
+      SourceId: c.req.query('sourceId'),
+      CounterSource: c.req.query('counterSource') || 'ApiKey',
+      CounterTiming: c.req.query('counterTiming') || 'Message',
+      CounterResolution: c.req.query('counterResolution') || 'Lifetime',
+      FromTS: c.req.query('fromTs'),
+      ToTS: c.req.query('toTs')
+    })
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet statcounters error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/link-click', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const campaignId = c.req.query('campaignId')
+  if (!campaignId) return c.json({ error: 'campaignId required' }, 400)
+  try {
+    const data = await getLinkClick(c.env, campaignId)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet link-click error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/recipient-esp', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  const campaignId = c.req.query('campaignId')
+  if (!campaignId) return c.json({ error: 'campaignId required' }, 400)
+  try {
+    const data = await getRecipientEsp(c.env, campaignId)
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet recipient-esp error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/contactstatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await getContactStatistics(c.env, {
+      contact: c.req.query('contact'),
+      campaignId: c.req.query('campaignId'),
+      fromTs: c.req.query('fromTs'),
+      toTs: c.req.query('toTs')
+    })
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet contactstatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/geostatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await getGeoStatistics(c.env, c.req.query('campaignId'))
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet geostatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/bouncestatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await getBounceStatistics(c.env, c.req.query('campaignId'))
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet bouncestatistics error', details: msg }, 500)
+  }
+})
+
+routes.get('/api/admin/mailjet/clickstatistics', async (c) => {
+  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const data = await getClickStatistics(c.env, c.req.query('campaignId'))
+    return c.json(data)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ error: 'Mailjet clickstatistics error', details: msg }, 500)
+  }
+})

@@ -1,5 +1,6 @@
 import type { ExecutionContext, ScheduledEvent } from "@cloudflare/workers-types";
 import { Hono } from "hono";
+import { cache } from "hono/cache";
 import { logger } from "hono/logger";
 import { processQueuedEmails } from "./controllers/email.controller";
 import { renderer } from "./renderer";
@@ -16,6 +17,17 @@ app.use(renderer);
 
 // Mount API/routes
 app.route("/", routes);
+
+// Cache GET responses for 1 hour (tune as needed). Avoid non-GET endpoints.
+app.get(
+	"*",
+	cache({
+		cacheName: "nocturne-cache",
+		cacheControl: "max-age=3600",
+	}),
+);
+
+// No API route handlers here — all routes are defined under src/routes.
 
 // A small wrapper so the cron task can be scheduled and awaited safely
 const cronTask = async (env: Env) => {

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nocturne Admin · Observability</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    header { display:flex; align-items:center; gap:8px; }
+    section { margin-top: 24px; }
+    pre { background:#0b1b2b; color:#cde3ff; padding:12px; border-radius:8px; overflow:auto; max-height: 50vh; }
+    input, select { padding:6px 8px; }
+    button { padding:6px 10px; margin-left:8px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <header><h2>Observability</h2><small>Cloudflare & Mailjet</small></header>
+
+  <section>
+    <h3>Cloudflare Logs (last 60 min)</h3>
+    <div class="row">
+      <label>Admin Key (optional): <input id="adminKey" placeholder="x-admin-key" /></label>
+      <button id="loadLogs">Load Logs</button>
+    </div>
+    <pre id="logsOutput">Click "Load Logs"…</pre>
+  </section>
+
+  <section>
+    <h3>Mailjet StatCounters</h3>
+    <div class="row">
+      <label>CounterSource
+        <select id="mjSource">
+          <option>ApiKey</option>
+          <option>Campaign</option>
+          <option>List</option>
+          <option>Sender</option>
+        </select>
+      </label>
+      <label>SourceId <input id="mjSourceId" placeholder="Campaign/List/Sender ID" /></label>
+      <label>Timing
+        <select id="mjTiming">
+          <option>Message</option>
+          <option>Event</option>
+        </select>
+      </label>
+      <label>Resolution
+        <select id="mjRes">
+          <option>Lifetime</option>
+          <option>Day</option>
+          <option>Hour</option>
+          <option>FiveMinutes</option>
+        </select>
+      </label>
+      <button id="loadStatCounters">Load</button>
+    </div>
+    <pre id="statCountersOutput">Set params and click Load…</pre>
+  </section>
+
+  <section>
+    <h3>Mailjet Link Clicks</h3>
+    <div class="row">
+      <label>CampaignId <input id="mjCampaignId" placeholder="12345" /></label>
+      <button id="loadLinkClicks">Load</button>
+    </div>
+    <pre id="linkClicksOutput">Enter CampaignId and click Load…</pre>
+  </section>
+
+  <section>
+    <h3>Mailjet Recipient ESP</h3>
+    <div class="row">
+      <label>CampaignId <input id="mjEspCampaignId" placeholder="12345" /></label>
+      <button id="loadRecipientEsp">Load</button>
+    </div>
+    <pre id="recipientEspOutput">Enter CampaignId and click Load…</pre>
+  </section>
+
+  <section>
+    <h3>More Mailjet Stats</h3>
+    <div class="row">
+      <label>CampaignId <input id="mjMoreCampaignId" placeholder="12345" /></label>
+      <button id="loadGeo">Geo</button>
+      <button id="loadBounce">Bounce</button>
+      <button id="loadClick">Click</button>
+    </div>
+    <div class="row">
+      <label>Contact (email/id) <input id="mjContact" placeholder="user@example.com" /></label>
+      <button id="loadContactStats">Contact Statistics</button>
+    </div>
+    <pre id="moreStatsOutput">Provide parameters and load…</pre>
+  </section>
+
+  <section>
+    <h3>Email Jobs</h3>
+    <div class="row">
+      <label>Status Filter
+        <select id="jobStatus">
+          <option value="">All</option>
+          <option>queued</option>
+          <option>processing</option>
+          <option>sent</option>
+          <option>failed</option>
+          <option>dead</option>
+        </select>
+      </label>
+      <label>Limit <input id="jobLimit" type="number" min="1" max="100" value="20" /></label>
+      <button id="loadJobs">Load</button>
+    </div>
+    <pre id="jobsOutput">Choose a filter and click Load…</pre>
+  </section>
+
+  <script>
+    const setAuth = (init = {}) => {
+      const key = document.getElementById('adminKey').value;
+      const headers = new Headers(init.headers || {});
+      if (key) headers.set('x-admin-key', key);
+      return { ...init, headers };
+    };
+
+    document.getElementById('loadLogs').onclick = async () => {
+      const res = await fetch('/api/admin/logs', setAuth());
+      const data = await res.json();
+      document.getElementById('logsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.getElementById('loadStatCounters').onclick = async () => {
+      const source = document.getElementById('mjSource').value;
+      const sourceId = document.getElementById('mjSourceId').value;
+      const timing = document.getElementById('mjTiming').value;
+      const res = document.getElementById('mjRes').value;
+      const qs = new URLSearchParams({ counterSource: source, counterTiming: timing, counterResolution: res });
+      if (sourceId) qs.set('sourceId', sourceId);
+      const resp = await fetch('/api/admin/mailjet/statcounters?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('statCountersOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.getElementById('loadLinkClicks').onclick = async () => {
+      const campaignId = document.getElementById('mjCampaignId').value;
+      const qs = new URLSearchParams({ campaignId });
+      const resp = await fetch('/api/admin/mailjet/link-click?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('linkClicksOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.getElementById('loadRecipientEsp').onclick = async () => {
+      const campaignId = document.getElementById('mjEspCampaignId').value;
+      const qs = new URLSearchParams({ campaignId });
+      const resp = await fetch('/api/admin/mailjet/recipient-esp?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('recipientEspOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    // More Mailjet Stats
+    document.getElementById('loadGeo').onclick = async () => {
+      const campaignId = document.getElementById('mjMoreCampaignId').value;
+      const qs = new URLSearchParams({});
+      if (campaignId) qs.set('campaignId', campaignId);
+      const resp = await fetch('/api/admin/mailjet/geostatistics?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('moreStatsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+    document.getElementById('loadBounce').onclick = async () => {
+      const campaignId = document.getElementById('mjMoreCampaignId').value;
+      const qs = new URLSearchParams({});
+      if (campaignId) qs.set('campaignId', campaignId);
+      const resp = await fetch('/api/admin/mailjet/bouncestatistics?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('moreStatsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+    document.getElementById('loadClick').onclick = async () => {
+      const campaignId = document.getElementById('mjMoreCampaignId').value;
+      const qs = new URLSearchParams({});
+      if (campaignId) qs.set('campaignId', campaignId);
+      const resp = await fetch('/api/admin/mailjet/clickstatistics?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('moreStatsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+    document.getElementById('loadContactStats').onclick = async () => {
+      const contact = document.getElementById('mjContact').value;
+      const qs = new URLSearchParams({});
+      if (contact) qs.set('contact', contact);
+      const resp = await fetch('/api/admin/mailjet/contactstatistics?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('moreStatsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    // Jobs list + requeue helpers
+    document.getElementById('loadJobs').onclick = async () => {
+      const status = document.getElementById('jobStatus').value;
+      const limit = document.getElementById('jobLimit').value || '20';
+      const qs = new URLSearchParams({ limit });
+      if (status) qs.set('status', status);
+      const resp = await fetch('/api/emails?' + qs.toString(), setAuth());
+      const data = await resp.json();
+      document.getElementById('jobsOutput').textContent = JSON.stringify(data, null, 2);
+    };
+
+    // Expose a simple requeue via prompt to avoid heavy UI
+    window.requeueJob = async function(id, reset=true) {
+      const qs = new URLSearchParams({ reset: String(!!reset) });
+      const resp = await fetch('/api/admin/emails/' + encodeURIComponent(id) + '/requeue?' + qs.toString(), setAuth({ method: 'POST' }));
+      const data = await resp.json();
+      alert(JSON.stringify(data, null, 2));
+    }
+  </script>
+</body>
+</html>

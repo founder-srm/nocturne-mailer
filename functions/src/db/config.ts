@@ -134,11 +134,21 @@ export const handleFailedJob = async (
 export const listEmails = async (
 	db: D1Database,
 	limit = 20,
+	status?: EmailStatus,
 ): Promise<EmailJob[]> => {
-	const { results } = await db
-		.prepare("SELECT * FROM emails ORDER BY created_at DESC LIMIT ?")
-		.bind(limit)
-		.all<EmailJob>();
+	let stmt: ReturnType<D1Database["prepare"]>;
+	if (status) {
+		stmt = db
+			.prepare(
+				"SELECT * FROM emails WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+			)
+			.bind(status, limit);
+	} else {
+		stmt = db.prepare(
+			"SELECT * FROM emails ORDER BY created_at DESC LIMIT ?",
+		).bind(limit);
+	}
+	const { results } = await stmt.all<EmailJob>();
 	return results ?? [];
 };
 
@@ -152,6 +162,31 @@ export const getEmailById = async (
 	const { results } = await db
 		.prepare("SELECT * FROM emails WHERE id = ?")
 		.bind(id)
+		.all<EmailJob>();
+	return results && results.length > 0 ? results[0] : null;
+};
+
+/**
+ * Requeue an email job that is in failed or dead state.
+ * @param db D1 database
+ * @param id job id
+ * @param resetRetries whether to reset retry_count back to 0 (default true)
+ * Returns updated job row or null if not found / not eligible.
+ */
+export const requeueEmailJob = async (
+	db: D1Database,
+	id: string,
+	resetRetries = true,
+): Promise<EmailJob | null> => {
+	const job = await getEmailById(db, id);
+	if (!job) return null;
+	if (job.status !== "failed" && job.status !== "dead") return null;
+	const retryExpr = resetRetries ? 0 : job.retry_count;
+	const { results } = await db
+		.prepare(
+			"UPDATE emails SET status = 'queued', retry_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *",
+		)
+		.bind(retryExpr, id)
 		.all<EmailJob>();
 	return results && results.length > 0 ? results[0] : null;
 };
