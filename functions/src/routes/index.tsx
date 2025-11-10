@@ -8,13 +8,11 @@ import { listEmails, getEmailById, requeueEmailJob } from '../db/config'
 import adminHtml from '../views/admin.html?raw'
 import {
   fetchWorkerLogs,
-  getStatCounters,
-  getLinkClick,
-  getRecipientEsp,
-  getContactStatistics,
-  getGeoStatistics,
-  getBounceStatistics,
-  getClickStatistics
+  getMessages,
+  getMessage,
+  getMessageHistory,
+  getMessageInformation,
+  getMessageSentStatistics
 } from '../controllers/admin.controller'
 import { FixedWindowRateLimiter } from '../utils/ratelimit.js'
 import { TTLCache } from '../utils/ttlCache.js'
@@ -48,10 +46,28 @@ routes.openapi(homeRoute, (c: Context) => {
 })
 
 // Serve OpenAPI JSON + Swagger UI
-routes.doc('/openapi.json', {
+routes.doc('/openapi.json', (c) => ({
   openapi: '3.1.0',
-  info: { title: 'Nocturne API', version: '1.0.0' }
-})
+  info: { 
+    title: 'Nocturne Email Queue API', 
+    version: '1.0.0',
+    description: 'Email queue system with Mailjet integration and Cloudflare Workers'
+  },
+  servers: [
+    { url: 'http://localhost:8787', description: 'Local development' },
+    { url: 'https://nocturne-functions.fc-dei.workers.dev', description: 'Production' }
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Enter your API bearer token'
+      }
+    }
+  }
+}))
 routes.get('/docs', swaggerUI({ url: '/openapi.json' }))
 
 // ---------------- Shared Schemas ----------------
@@ -255,7 +271,7 @@ routes.openapi(getEmailRoute, async (c) => {
 })
 
 // --- Admin specific (retry) EXPOSED via OpenAPI ---
-const adminSecurity = [{ AdminKey: [] }] as unknown as Array<Record<string, string[]>>
+const adminSecurity = [{ bearerAuth: [] }]
 const adminRequeueRoute = createRoute({
   method: 'post',
   path: '/api/admin/emails/{id}/requeue',
@@ -374,137 +390,29 @@ routes.openapi(adminLogsRoute, async (c: Context) => {
   }
 });
 
-// Admin: Mailjet statcounters
-const adminStatCountersRoute = createRoute({
+// Admin: Mailjet Messages API - Get all messages
+const adminMessagesRoute = createRoute({
   method: 'get',
-  path: '/api/admin/mailjet/statcounters',
+  path: '/api/admin/mailjet/messages',
   tags: ['Admin'],
   security: adminSecurity,
   request: {
     query: z.object({
-      sourceId: z.string().optional(),
-      counterSource: z.string().optional(),
-      counterTiming: z.string().optional(),
-      counterResolution: z.string().optional(),
-      fromTs: z.string().optional(),
-      toTs: z.string().optional()
-    })
-  },
-  responses: { 200: { description: 'Statcounters success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminStatCountersRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getStatCounters(c.env, {
-      SourceId: c.req.query('sourceId'),
-      CounterSource: c.req.query('counterSource') || 'ApiKey',
-      CounterTiming: c.req.query('counterTiming') || 'Message',
-      CounterResolution: c.req.query('counterResolution') || 'Lifetime',
-      FromTS: c.req.query('fromTs'),
-      ToTS: c.req.query('toTs')
-  })
-  if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-  else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet statcounters error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet link-click
-const adminLinkClickRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/link-click',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: { query: z.object({ campaignId: z.string() }) },
-  responses: { 200: { description: 'Link-click success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminLinkClickRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const campaignId = c.req.query('campaignId')
-  if (!campaignId) return c.json({ success: false, error: 'campaignId required' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getLinkClick(c.env, campaignId)
-  if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-  else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet link-click error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet recipient-esp
-const adminRecipientEspRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/recipient-esp',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: { query: z.object({ campaignId: z.string() }) },
-  responses: { 200: { description: 'Recipient-esp success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminRecipientEspRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const campaignId = c.req.query('campaignId')
-  if (!campaignId) return c.json({ success: false, error: 'campaignId required' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getRecipientEsp(c.env, campaignId)
-  if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-  else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet recipient-esp error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet contactstatistics
-const adminContactStatsRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/contactstatistics',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: {
-    query: z.object({
+      campaign: z.string().optional(),
       contact: z.string().optional(),
-      campaignId: z.string().optional(),
-      fromTs: z.string().optional(),
-      toTs: z.string().optional()
+      fromTS: z.string().optional(),
+      toTS: z.string().optional(),
+      fromType: z.string().optional(),
+      messageStatus: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+      showSubject: z.string().optional()
     })
   },
-  responses: { 200: { description: 'Contactstatistics success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
+  responses: { 200: { description: 'Messages list success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
 })
 
-routes.openapi(adminContactStatsRoute, async (c: Context) => {
+routes.openapi(adminMessagesRoute, async (c: Context) => {
   if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
   const key = getCacheKey(c)
   if (c.env.ADMIN_CACHE_KV) {
@@ -515,143 +423,133 @@ routes.openapi(adminContactStatsRoute, async (c: Context) => {
     if (cached) return c.json({ success: true, data: cached }, 200)
   }
   try {
-    const data = await getContactStatistics(c.env, {
-      contact: c.req.query('contact'),
-      campaignId: c.req.query('campaignId'),
-      fromTs: c.req.query('fromTs'),
-      toTs: c.req.query('toTs')
-  })
-  if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-  else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet contactstatistics error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet geostatistics
-const adminGeoStatsRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/geostatistics',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: { query: z.object({ campaignId: z.string().optional() }) },
-  responses: { 200: { description: 'Geostatistics success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminGeoStatsRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getGeoStatistics(c.env, c.req.query('campaignId'))
-  if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-  else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet geostatistics error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet bouncestatistics
-const adminBounceStatsRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/bouncestatistics',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: { query: z.object({ campaignId: z.string().optional() }) },
-  responses: { 200: { description: 'Bouncestatistics success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminBounceStatsRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getBounceStatistics(c.env, c.req.query('campaignId'))
-    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-    else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet bouncestatistics error: ${msg}` }, 200)
-  }
- });
-
-// Admin: Mailjet clickstatistics
-const adminClickStatsRoute = createRoute({
-  method: 'get',
-  path: '/api/admin/mailjet/clickstatistics',
-  tags: ['Admin'],
-  security: adminSecurity,
-  request: { query: z.object({ campaignId: z.string().optional() }) },
-  responses: { 200: { description: 'Clickstatistics success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
-})
-
-routes.openapi(adminClickStatsRoute, async (c: Context) => {
-  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
-  const key = getCacheKey(c)
-  if (c.env.ADMIN_CACHE_KV) {
-    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
-    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
-  } else {
-    const cached = adminCache.get(key)
-    if (cached) return c.json({ success: true, data: cached }, 200)
-  }
-  try {
-    const data = await getClickStatistics(c.env, c.req.query('campaignId'))
-    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
-    else adminCache.set(key, data, 30_000)
-    return c.json({ success: true, data }, 200)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: `Mailjet clickstatistics error: ${msg}` }, 200)
-  }
- });
-
-// duplicate section removed (isAuthorized defined earlier)
-
-routes.get('/api/admin/mailjet/statcounters', async (c) => {
-  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
-  try {
-    const data = await getStatCounters(c.env, {
-      SourceId: c.req.query('sourceId'),
-      CounterSource: c.req.query('counterSource') || 'ApiKey',
-      CounterTiming: c.req.query('counterTiming') || 'Message',
-      CounterResolution: c.req.query('counterResolution') || 'Lifetime',
-      FromTS: c.req.query('fromTs'),
-      ToTS: c.req.query('toTs')
+    const data = await getMessages(c.env, {
+      Campaign: c.req.query('campaign'),
+      Contact: c.req.query('contact'),
+      FromTS: c.req.query('fromTS'),
+      ToTS: c.req.query('toTS'),
+      FromType: c.req.query('fromType') || '1', // Default to transactional
+      MessageStatus: c.req.query('messageStatus'),
+      Limit: c.req.query('limit') || '100',
+      Offset: c.req.query('offset') || '0',
+      ShowSubject: c.req.query('showSubject') || 'true'
     })
-    return c.json(data)
+    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
+    else adminCache.set(key, data, 30_000)
+    return c.json({ success: true, data }, 200)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ error: 'Mailjet statcounters error', details: msg }, 500)
+    return c.json({ success: false, error: `Mailjet messages error: ${msg}` }, 200)
   }
+});
+
+// Admin: Mailjet Messages API - Get single message
+const adminMessageRoute = createRoute({
+  method: 'get',
+  path: '/api/admin/mailjet/messages/{messageId}',
+  tags: ['Admin'],
+  security: adminSecurity,
+  request: { params: z.object({ messageId: z.string() }) },
+  responses: { 200: { description: 'Message details success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
 })
 
-routes.get('/api/admin/mailjet/link-click', async (c) => {
-  if (!isAuthorized(c)) return c.json({ error: 'Unauthorized' }, 401)
-  const campaignId = c.req.query('campaignId')
-  if (!campaignId) return c.json({ error: 'campaignId required' }, 400)
+routes.openapi(adminMessageRoute, async (c: Context) => {
+  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
+  const messageId = c.req.param('messageId')
+  const key = getCacheKey(c)
+  if (c.env.ADMIN_CACHE_KV) {
+    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
+    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
+  } else {
+    const cached = adminCache.get(key)
+    if (cached) return c.json({ success: true, data: cached }, 200)
+  }
   try {
-    const data = await getLinkClick(c.env, campaignId)
-    return c.json(data)
+    const data = await getMessage(c.env, messageId)
+    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
+    else adminCache.set(key, data, 30_000)
+    return c.json({ success: true, data }, 200)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return c.json({ error: 'Mailjet link-click error', details: msg }, 500)
+    return c.json({ success: false, error: `Mailjet message error: ${msg}` }, 200)
   }
+});
+
+// Admin: Mailjet Messages API - Get message history
+const adminMessageHistoryRoute = createRoute({
+  method: 'get',
+  path: '/api/admin/mailjet/messages/{messageId}/history',
+  tags: ['Admin'],
+  security: adminSecurity,
+  request: { params: z.object({ messageId: z.string() }) },
+  responses: { 200: { description: 'Message history success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
 })
+
+routes.openapi(adminMessageHistoryRoute, async (c: Context) => {
+  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
+  const messageId = c.req.param('messageId')
+  const key = getCacheKey(c)
+  if (c.env.ADMIN_CACHE_KV) {
+    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
+    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
+  } else {
+    const cached = adminCache.get(key)
+    if (cached) return c.json({ success: true, data: cached }, 200)
+  }
+  try {
+    const data = await getMessageHistory(c.env, messageId)
+    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
+    else adminCache.set(key, data, 30_000)
+    return c.json({ success: true, data }, 200)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: `Mailjet message history error: ${msg}` }, 200)
+  }
+});
+
+// Admin: Mailjet Messages API - Get message information (sending/size/spam info)
+const adminMessageInformationRoute = createRoute({
+  method: 'get',
+  path: '/api/admin/mailjet/messageinformation',
+  tags: ['Admin'],
+  security: adminSecurity,
+  request: {
+    query: z.object({
+      campaignID: z.string().optional(),
+      fromTS: z.string().optional(),
+      toTS: z.string().optional(),
+      messageStatus: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional()
+    })
+  },
+  responses: { 200: { description: 'Message information success or error envelope', content: { 'application/json': { schema: z.union([AnySuccessEnvelope, ErrorEnvelope]) } } } }
+})
+
+routes.openapi(adminMessageInformationRoute, async (c: Context) => {
+  if (!isAuthorized(c)) return c.json({ success: false, error: 'Unauthorized' }, 200)
+  const key = getCacheKey(c)
+  if (c.env.ADMIN_CACHE_KV) {
+    const kv = await kvCacheGet(c.env.ADMIN_CACHE_KV, key)
+    if (kv !== undefined) return c.json({ success: true, data: kv }, 200)
+  } else {
+    const cached = adminCache.get(key)
+    if (cached) return c.json({ success: true, data: cached }, 200)
+  }
+  try {
+    const data = await getMessageInformation(c.env, {
+      CampaignID: c.req.query('campaignID'),
+      FromTS: c.req.query('fromTS'),
+      ToTS: c.req.query('toTS'),
+      MessageStatus: c.req.query('messageStatus'),
+      Limit: c.req.query('limit') || '100',
+      Offset: c.req.query('offset') || '0'
+    })
+    if (c.env.ADMIN_CACHE_KV) await kvCacheSet(c.env.ADMIN_CACHE_KV, key, data, 30_000)
+    else adminCache.set(key, data, 30_000)
+    return c.json({ success: true, data }, 200)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: `Mailjet message information error: ${msg}` }, 200)
+  }
+});

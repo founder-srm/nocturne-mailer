@@ -61,56 +61,70 @@ export async function fetchWorkerLogs(env: Env, sinceISO?: string, untilISO?: st
   return data.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive || []
 }
 
-export async function getStatCounters(env: Env, params: { SourceId?: string; CounterSource?: string; CounterTiming?: string; CounterResolution?: string; FromTS?: string; ToTS?: string }) {
+// New Messages API endpoints
+export async function getMessages(env: Env, params: {
+  Campaign?: string;
+  Contact?: string;
+  FromTS?: string;
+  ToTS?: string;
+  FromType?: string;
+  MessageStatus?: string;
+  Limit?: string;
+  Offset?: string;
+  ShowSubject?: string;
+}) {
   const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
   if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('statcounters', apiKey, secret, {
-    ...(params.SourceId ? { SourceId: params.SourceId } : {}),
-    CounterSource: params.CounterSource || 'ApiKey',
-    CounterTiming: params.CounterTiming || 'Message',
-    CounterResolution: params.CounterResolution || 'Lifetime',
+  return mailjetFetch('message', apiKey, secret, {
+    ...(params.Campaign ? { Campaign: params.Campaign } : {}),
+    ...(params.Contact ? { Contact: params.Contact } : {}),
     ...(params.FromTS ? { FromTS: params.FromTS } : {}),
-    ...(params.ToTS ? { ToTS: params.ToTS } : {})
+    ...(params.ToTS ? { ToTS: params.ToTS } : {}),
+    ...(params.FromType ? { FromType: params.FromType } : {}),
+    ...(params.MessageStatus ? { MessageStatus: params.MessageStatus } : {}),
+    Limit: params.Limit || '100',
+    Offset: params.Offset || '0',
+    ShowSubject: params.ShowSubject || 'true',
   })
 }
 
-export async function getLinkClick(env: Env, campaignId: string) {
+export async function getMessage(env: Env, messageId: string) {
   const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
   if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('statistics/link-click', apiKey, secret, { CampaignId: campaignId })
+  return mailjetFetch(`message/${messageId}`, apiKey, secret)
 }
 
-export async function getRecipientEsp(env: Env, campaignId: string) {
+export async function getMessageHistory(env: Env, messageId: string) {
   const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
   if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('statistics/recipient-esp', apiKey, secret, { CampaignId: campaignId })
+  return mailjetFetch(`messagehistory/${messageId}`, apiKey, secret)
 }
 
-export async function getContactStatistics(env: Env, params: { contact?: string; campaignId?: string; fromTs?: string; toTs?: string }) {
+export async function getMessageInformation(env: Env, params: {
+  CampaignID?: string;
+  FromTS?: string;
+  ToTS?: string;
+  MessageStatus?: string;
+  Limit?: string;
+  Offset?: string;
+}) {
   const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
   if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('contactstatistics', apiKey, secret, {
-    ...(params.contact ? { Contact: params.contact } : {}),
-    ...(params.campaignId ? { CampaignId: params.campaignId } : {}),
-    ...(params.fromTs ? { FromTS: params.fromTs } : {}),
-    ...(params.toTs ? { ToTS: params.toTs } : {})
+  return mailjetFetch('messageinformation', apiKey, secret, {
+    ...(params.CampaignID ? { CampaignID: params.CampaignID } : {}),
+    ...(params.FromTS ? { FromTS: params.FromTS } : {}),
+    ...(params.ToTS ? { ToTS: params.ToTS } : {}),
+    ...(params.MessageStatus ? { MessageStatus: params.MessageStatus } : {}),
+    Limit: params.Limit || '100',
+    Offset: params.Offset || '0',
   })
 }
 
-export async function getGeoStatistics(env: Env, campaignId?: string) {
+export async function getMessageSentStatistics(env: Env, messageId?: string) {
   const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
   if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('geostatistics', apiKey, secret, { ...(campaignId ? { CampaignId: campaignId } : {}) })
+  const path = messageId ? `messagesentstatistics/${messageId}` : 'messagesentstatistics'
+  return mailjetFetch(path, apiKey, secret)
 }
 
-export async function getBounceStatistics(env: Env, campaignId?: string) {
-  const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
-  if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('bouncestatistics', apiKey, secret, { ...(campaignId ? { CampaignId: campaignId } : {}) })
-}
 
-export async function getClickStatistics(env: Env, campaignId?: string) {
-  const { MAILJET_API_KEY: apiKey, MAILJET_SECRET_KEY: secret } = env
-  if (!apiKey || !secret) throw new Error('Missing Mailjet credentials')
-  return mailjetFetch('clickstatistics', apiKey, secret, { ...(campaignId ? { CampaignId: campaignId } : {}) })
-}
