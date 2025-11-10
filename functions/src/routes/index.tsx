@@ -245,31 +245,6 @@ routes.openapi(listEmailsRoute, async (c) => {
   }
 })
 
-// ---------------- /api/emails/{id} ----------------
-const getEmailRoute = createRoute({
-  method: 'get',
-  path: '/api/emails/{id}',
-  tags: ['Email'],
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: { description: 'Email job', content: { 'application/json': { schema: EmailJobSchema } } },
-    404: { description: 'Not found', content: { 'application/json': { schema: ErrorResponse } } },
-    500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
-  }
-})
-
-routes.openapi(getEmailRoute, async (c) => {
-  try {
-    if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
-    const id = c.req.param('id')
-    const email = await getEmailById(c.env.nocturne_db, id)
-    if (!email) return c.json({ error: 'Not found' }, 404)
-    return c.json(email, 200)
-  } catch (e) {
-    return c.json({ error: 'Failed to fetch email' }, 500)
-  }
-})
-
 // ---------------- /api/emails/stats ----------------
 const EmailStatusCounts = z.object({
   queued: z.number(),
@@ -372,6 +347,31 @@ routes.openapi(getPaginatedEmailsRoute, async (c) => {
     }, 200)
   } catch (e) {
     return c.json({ error: 'Failed to fetch paginated emails' }, 500)
+  }
+})
+
+// ---------------- /api/emails/{id} ----------------
+const getEmailRoute = createRoute({
+  method: 'get',
+  path: '/api/emails/{id}',
+  tags: ['Email'],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: 'Email job', content: { 'application/json': { schema: EmailJobSchema } } },
+    404: { description: 'Not found', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
+  }
+})
+
+routes.openapi(getEmailRoute, async (c) => {
+  try {
+    if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
+    const id = c.req.param('id')
+    const email = await getEmailById(c.env.nocturne_db, id)
+    if (!email) return c.json({ error: 'Not found' }, 404)
+    return c.json(email, 200)
+  } catch (e) {
+    return c.json({ error: 'Failed to fetch email' }, 500)
   }
 })
 
