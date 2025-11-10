@@ -270,6 +270,111 @@ routes.openapi(getEmailRoute, async (c) => {
   }
 })
 
+// ---------------- /api/emails/stats ----------------
+const EmailStatusCounts = z.object({
+  queued: z.number(),
+  processing: z.number(),
+  sent: z.number(),
+  failed: z.number(),
+  dead: z.number(),
+  total: z.number()
+})
+
+const getEmailStatsRoute = createRoute({
+  method: 'get',
+  path: '/api/emails/stats',
+  tags: ['Email'],
+  responses: {
+    200: {
+      description: 'Email statistics by status',
+      content: { 'application/json': { schema: EmailStatusCounts } }
+    },
+    500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
+  }
+})
+
+routes.openapi(getEmailStatsRoute, async (c) => {
+  try {
+    if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
+    const { getEmailStatusCounts } = await import('../db/config')
+    const counts = await getEmailStatusCounts(c.env.nocturne_db)
+    const total = counts.queued + counts.processing + counts.sent + counts.failed + counts.dead
+    return c.json({ ...counts, total }, 200)
+  } catch (e) {
+    return c.json({ error: 'Failed to fetch email stats' }, 500)
+  }
+})
+
+// ---------------- /api/emails/paginated ----------------
+const PaginatedEmailsResponse = z.object({
+  emails: z.array(EmailJobSchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  hasMore: z.boolean()
+})
+
+const getPaginatedEmailsRoute = createRoute({
+  method: 'get',
+  path: '/api/emails/paginated',
+  tags: ['Email'],
+  request: {
+    query: z.object({
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+      status: EmailStatus.optional(),
+      orderBy: z.enum(['created_at', 'updated_at']).optional(),
+      order: z.enum(['ASC', 'DESC']).optional()
+    })
+  },
+  responses: {
+    200: {
+      description: 'Paginated list of email jobs',
+      content: { 'application/json': { schema: PaginatedEmailsResponse } }
+    },
+    400: { description: 'Invalid query', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'Server error', content: { 'application/json': { schema: ErrorResponse } } }
+  }
+})
+
+routes.openapi(getPaginatedEmailsRoute, async (c) => {
+  try {
+    if (!c.env?.nocturne_db) return c.json({ error: "D1 binding 'nocturne_db' missing" }, 500)
+    
+    const limitParam = c.req.query('limit')
+    const offsetParam = c.req.query('offset')
+    const statusParam = c.req.query('status') as z.infer<typeof EmailStatus> | undefined
+    const orderByParam = c.req.query('orderBy') as 'created_at' | 'updated_at' | undefined
+    const orderParam = c.req.query('order') as 'ASC' | 'DESC' | undefined
+    
+    if (statusParam && !EmailStatus.options.includes(statusParam)) {
+      return c.json({ error: 'Invalid status parameter' }, 400)
+    }
+    
+    const limit = Math.min(Math.max(Number(limitParam) || 20, 1), 100)
+    const offset = Math.max(Number(offsetParam) || 0, 0)
+    
+    const { getEmailsPaginated } = await import('../db/config')
+    const result = await getEmailsPaginated(c.env.nocturne_db, {
+      limit,
+      offset,
+      status: statusParam,
+      orderBy: orderByParam,
+      order: orderParam
+    })
+    
+    return c.json({
+      emails: result.emails,
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total
+    }, 200)
+  } catch (e) {
+    return c.json({ error: 'Failed to fetch paginated emails' }, 500)
+  }
+})
+
 // --- Admin specific (retry) EXPOSED via OpenAPI ---
 const adminSecurity = [{ bearerAuth: [] }]
 const adminRequeueRoute = createRoute({

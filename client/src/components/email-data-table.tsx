@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from "react"
-import { useEmails } from "@/hooks/use-api"
+import { useEmailsPaginated } from "@/hooks/use-api"
 import { formatDistanceToNow } from 'date-fns'
 import {
   IconCircleCheckFilled,
@@ -17,7 +17,6 @@ import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
-  getPaginationRowModel,
   getSortedRowModel,
   type SortingState,
   useReactTable,
@@ -150,28 +149,55 @@ export function EmailDataTable() {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [rowSelection, setRowSelection] = React.useState({})
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
+  const [pageIndex, setPageIndex] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(20)
   
-  const { data: emails, error, isLoading, mutate } = useEmails({ 
-    limit: 100,
-    status: statusFilter === "all" ? undefined : statusFilter 
+  const { data: paginatedData, error, isLoading, mutate } = useEmailsPaginated({ 
+    limit: pageSize,
+    offset: pageIndex * pageSize,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    orderBy: 'created_at',
+    order: 'DESC'
   })
   
+  const emails = paginatedData?.emails || []
+  const totalRows = paginatedData?.total || 0
+  const pageCount = Math.ceil(totalRows / pageSize)
+  
   const table = useReactTable({
-    data: emails || [],
+    data: emails,
     columns,
+    pageCount,
+    state: {
+      sorting,
+      columnFilters,
+      rowSelection,
+      pagination: {
+        pageIndex,
+        pageSize,
+      },
+    },
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: setRowSelection,
-    state: {
-      sorting,
-      columnFilters,
-      rowSelection,
+    onPaginationChange: (updater) => {
+      if (typeof updater === 'function') {
+        const newState = updater({ pageIndex, pageSize })
+        setPageIndex(newState.pageIndex)
+        setPageSize(newState.pageSize)
+      }
     },
+    manualPagination: true,
   })
+  
+  // Reset to first page when status filter changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: need to reset page on filter change
+  React.useEffect(() => {
+    setPageIndex(0)
+  }, [statusFilter])
   
   if (error) {
     return (
@@ -289,39 +315,39 @@ export function EmailDataTable() {
         <div className="flex items-center justify-between px-4 py-4 border-t">
           <div className="flex-1 text-sm text-muted-foreground">
             {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
+            {totalRows} total row(s) selected.
           </div>
           <div className="flex items-center space-x-6 lg:space-x-8">
             <div className="flex items-center space-x-2">
               <p className="text-sm font-medium">Rows per page</p>
               <Select
-                value={`${table.getState().pagination.pageSize}`}
+                value={`${pageSize}`}
                 onValueChange={(value) => {
-                  table.setPageSize(Number(value))
+                  setPageSize(Number(value))
+                  setPageIndex(0)
                 }}
               >
                 <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue placeholder={table.getState().pagination.pageSize} />
+                  <SelectValue placeholder={pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
-                  {[10, 20, 30, 40, 50].map((pageSize) => (
-                    <SelectItem key={pageSize} value={`${pageSize}`}>
-                      {pageSize}
+                  {[10, 20, 30, 40, 50].map((size) => (
+                    <SelectItem key={size} value={`${size}`}>
+                      {size}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
-              {table.getPageCount()}
+              Page {pageIndex + 1} of {pageCount || 1}
             </div>
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
                 className="hidden h-8 w-8 p-0 lg:flex"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => setPageIndex(0)}
+                disabled={pageIndex === 0}
               >
                 <span className="sr-only">Go to first page</span>
                 <IconChevronsLeft className="h-4 w-4" />
@@ -329,8 +355,8 @@ export function EmailDataTable() {
               <Button
                 variant="outline"
                 className="h-8 w-8 p-0"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => setPageIndex(prev => Math.max(0, prev - 1))}
+                disabled={pageIndex === 0}
               >
                 <span className="sr-only">Go to previous page</span>
                 <IconChevronLeft className="h-4 w-4" />
@@ -338,8 +364,8 @@ export function EmailDataTable() {
               <Button
                 variant="outline"
                 className="h-8 w-8 p-0"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
+                onClick={() => setPageIndex(prev => Math.min(pageCount - 1, prev + 1))}
+                disabled={pageIndex >= pageCount - 1}
               >
                 <span className="sr-only">Go to next page</span>
                 <IconChevronRight className="h-4 w-4" />
@@ -347,8 +373,8 @@ export function EmailDataTable() {
               <Button
                 variant="outline"
                 className="hidden h-8 w-8 p-0 lg:flex"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
+                onClick={() => setPageIndex(pageCount - 1)}
+                disabled={pageIndex >= pageCount - 1}
               >
                 <span className="sr-only">Go to last page</span>
                 <IconChevronsRight className="h-4 w-4" />

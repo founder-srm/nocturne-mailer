@@ -116,6 +116,49 @@ class APIClient {
     }>(`/api/emails/${id}`)
   }
 
+  async getEmailStats() {
+    return this.request<{
+      queued: number
+      processing: number
+      sent: number
+      failed: number
+      dead: number
+      total: number
+    }>('/api/emails/stats')
+  }
+
+  async getEmailsPaginated(params?: {
+    limit?: number
+    offset?: number
+    status?: string
+    orderBy?: 'created_at' | 'updated_at'
+    order?: 'ASC' | 'DESC'
+  }) {
+    const query = new URLSearchParams()
+    if (params?.limit) query.append('limit', params.limit.toString())
+    if (params?.offset) query.append('offset', params.offset.toString())
+    if (params?.status) query.append('status', params.status)
+    if (params?.orderBy) query.append('orderBy', params.orderBy)
+    if (params?.order) query.append('order', params.order)
+    
+    return this.request<{
+      emails: Array<{
+        id: string
+        recipient: string
+        subject: string
+        body: string
+        status: 'queued' | 'processing' | 'sent' | 'failed' | 'dead'
+        retry_count: number
+        created_at: string
+        updated_at: string
+      }>
+      total: number
+      limit: number
+      offset: number
+      hasMore: boolean
+    }>(`/api/emails/paginated?${query.toString()}`)
+  }
+
   async sendEmails(emails: Array<{ recipient: string; subject: string; body: string }>) {
     return this.request<{ message: string; jobIds: string[] }>('/api/send', {
       method: 'POST',

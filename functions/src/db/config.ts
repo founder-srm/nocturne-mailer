@@ -190,3 +190,104 @@ export const requeueEmailJob = async (
 		.all<EmailJob>();
 	return results && results.length > 0 ? results[0] : null;
 };
+
+/**
+ * Get count of emails by status
+ * @param db D1 database
+ * @param status Optional status filter
+ * @returns Count of emails
+ */
+export const getEmailCount = async (
+	db: D1Database,
+	status?: EmailStatus,
+): Promise<number> => {
+	let stmt: ReturnType<D1Database["prepare"]>;
+	if (status) {
+		stmt = db
+			.prepare("SELECT COUNT(*) as count FROM emails WHERE status = ?")
+			.bind(status);
+	} else {
+		stmt = db.prepare("SELECT COUNT(*) as count FROM emails");
+	}
+	const { results } = await stmt.all<{ count: number }>();
+	return results && results.length > 0 ? results[0].count : 0;
+};
+
+/**
+ * Get counts for all email statuses
+ * @param db D1 database
+ * @returns Object with counts for each status
+ */
+export const getEmailStatusCounts = async (
+	db: D1Database,
+): Promise<Record<EmailStatus, number>> => {
+	const { results } = await db
+		.prepare(
+			"SELECT status, COUNT(*) as count FROM emails GROUP BY status",
+		)
+		.all<{ status: EmailStatus; count: number }>();
+
+	const counts: Record<EmailStatus, number> = {
+		queued: 0,
+		processing: 0,
+		sent: 0,
+		failed: 0,
+		dead: 0,
+	};
+
+	if (results) {
+		for (const row of results) {
+			counts[row.status] = row.count;
+		}
+	}
+
+	return counts;
+};
+
+/**
+ * Get paginated list of emails with optional status filter
+ * @param db D1 database
+ * @param options Pagination and filter options
+ * @returns Paginated email list with total count
+ */
+export const getEmailsPaginated = async (
+	db: D1Database,
+	options: {
+		limit?: number;
+		offset?: number;
+		status?: EmailStatus;
+		orderBy?: "created_at" | "updated_at";
+		order?: "ASC" | "DESC";
+	} = {},
+): Promise<{ emails: EmailJob[]; total: number }> => {
+	const limit = Math.min(Math.max(options.limit || 20, 1), 100);
+	const offset = Math.max(options.offset || 0, 0);
+	const orderBy = options.orderBy || "created_at";
+	const order = options.order || "DESC";
+
+	// Get total count
+	const total = await getEmailCount(db, options.status);
+
+	// Get paginated results
+	let stmt: ReturnType<D1Database["prepare"]>;
+	if (options.status) {
+		stmt = db
+			.prepare(
+				`SELECT * FROM emails WHERE status = ? ORDER BY ${orderBy} ${order} LIMIT ? OFFSET ?`,
+			)
+			.bind(options.status, limit, offset);
+	} else {
+		stmt = db
+			.prepare(
+				`SELECT * FROM emails ORDER BY ${orderBy} ${order} LIMIT ? OFFSET ?`,
+			)
+			.bind(limit, offset);
+	}
+
+	const { results } = await stmt.all<EmailJob>();
+
+	return {
+		emails: results ?? [],
+		total,
+	};
+};

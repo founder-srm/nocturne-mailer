@@ -1,7 +1,7 @@
 'use client'
 
 import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react"
-import { useEmails, useMessages } from "@/hooks/use-api"
+import { useEmailStats, useMessages } from "@/hooks/use-api"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -15,36 +15,25 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 
 export function SectionCards() {
-  const { data: emails, isLoading: emailsLoading } = useEmails({ limit: 1000 })
+  // Get local email statistics from D1 database
+  const { data: emailStats, isLoading: statsLoading } = useEmailStats()
   
-  // Get all messages for accurate counts
-  const { data: allMessages, isLoading: allMessagesLoading } = useMessages({ 
-    limit: 1000 
-  })
-  
-  // Get sent messages
+  // Get sent messages from Mailjet for accurate sent count
   const { data: sentMessages, isLoading: sentLoading } = useMessages({ 
     messageStatus: 'sent',
     limit: 1000 
   })
   
-  // Calculate totals from Mailjet Messages API
-  const totalMailjetMessages = allMessages?.Count || 0
-  const sentCount = sentMessages?.Count || 0
+  // Use D1 stats for most counts, Mailjet for sent count
+  const totalEmails = emailStats?.total || 0
+  const sentCount = sentMessages?.Count || emailStats?.sent || 0
+  const queuedEmails = (emailStats?.queued || 0) + (emailStats?.processing || 0)
+  const failedEmails = (emailStats?.failed || 0) + (emailStats?.dead || 0)
   
-  // Calculate queue/failed from local D1 database
-  const emailsByStatus = emails?.reduce((acc, email) => {
-    acc[email.status] = (acc[email.status] || 0) + 1
-    return acc
-  }, {} as Record<string, number>) || {}
+  const successRate = totalEmails > 0 ? ((sentCount / totalEmails) * 100).toFixed(1) : 0
+  const failureRate = totalEmails > 0 ? ((failedEmails / totalEmails) * 100).toFixed(1) : 0
   
-  const queuedEmails = (emailsByStatus.queued || 0) + (emailsByStatus.processing || 0)
-  const failedEmails = (emailsByStatus.failed || 0) + (emailsByStatus.dead || 0)
-  
-  const successRate = totalMailjetMessages > 0 ? ((sentCount / totalMailjetMessages) * 100).toFixed(1) : 0
-  const failureRate = totalMailjetMessages > 0 ? ((failedEmails / totalMailjetMessages) * 100).toFixed(1) : 0
-  
-  const isLoading = emailsLoading || allMessagesLoading || sentLoading
+  const isLoading = statsLoading || sentLoading
   
   return (
     <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
@@ -55,7 +44,7 @@ export function SectionCards() {
             <Skeleton className="h-9 w-32" />
           ) : (
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {totalMailjetMessages.toLocaleString()}
+              {totalEmails.toLocaleString()}
             </CardTitle>
           )}
           <CardAction>

@@ -34,6 +34,42 @@ export function useEmail(id: string | null, config?: SWRConfiguration) {
   )
 }
 
+// Email stats hook
+export function useEmailStats(config?: SWRConfiguration) {
+  return useSWR(
+    '/api/emails/stats',
+    () => apiClient.getEmailStats(),
+    { ...defaultConfig, ...config }
+  )
+}
+
+// Paginated emails hook
+export function useEmailsPaginated(
+  params?: {
+    limit?: number
+    offset?: number
+    status?: string
+    orderBy?: 'created_at' | 'updated_at'
+    order?: 'ASC' | 'DESC'
+  },
+  config?: SWRConfiguration
+) {
+  const query = new URLSearchParams()
+  if (params?.limit) query.append('limit', params.limit.toString())
+  if (params?.offset) query.append('offset', params.offset.toString())
+  if (params?.status) query.append('status', params.status)
+  if (params?.orderBy) query.append('orderBy', params.orderBy)
+  if (params?.order) query.append('order', params.order)
+  
+  const key = `/api/emails/paginated?${query.toString()}`
+  
+  return useSWR(
+    key,
+    () => apiClient.getEmailsPaginated(params),
+    { ...defaultConfig, ...config }
+  )
+}
+
 // Admin logs hook
 export function useLogs(
   params?: { since?: string; until?: string; scriptName?: string },
