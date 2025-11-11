@@ -18,6 +18,7 @@ app.use("*", cors({
 		// Allow localhost for development and your production domains
 		if (origin.includes('localhost') || origin.includes('127.0.0.1')) return origin
 		// Add your production client domain here
+		if (origin.includes('nocturne-delta.vercel.app')) return origin
 		return origin
 	},
 	allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
