@@ -1,0 +1,25 @@
+meta {
+  name: Send Email
+  type: http
+  seq: 2
+}
+
+post {
+  url: https://nocturne-functions.fc-dei.workers.dev/api/send
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: Y4UYOrWMsIKxVjdGlKVJo9gw2dRSeRoGYV5dO28gov8m30wSU4Kr5dj0Qok4tdlw
+}
+
+body:json {
+  [
+    {
+      "recipient": "joshuakbiju2345@gmail.com",
+      "subject": "Welcome!",
+      "body": "Thanks for signing up."
+    }
+  ]
+}
