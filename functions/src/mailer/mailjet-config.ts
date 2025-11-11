@@ -19,8 +19,8 @@ export const sendEmailWithMailjet = async (
 		Messages: [
 			{
 				From: {
-					Email: "contact@suvangs.tech", // IMPORTANT: Replace later with fc email
-					Name: "Suvan GS",
+					Email: "newsletter@thefoundersclub.tech",
+					Name: "Newsletter FC",
 				},
 				To: [
 					{
